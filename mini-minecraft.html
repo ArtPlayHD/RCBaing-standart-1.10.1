@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Мини-Minecraft — моды и читы</title>
+<style>
+  body { margin: 0; overflow: hidden; font-family: sans-serif; }
+  #hud { position: fixed; top: 10px; left: 10px; color: #fff; font-size: 15px;
+         text-shadow: 1px 1px 2px #000; pointer-events: none; }
+  .panel { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex;
+           align-items: center; justify-content: center; }
+  .card { background: #2b2b2b; color: #fff; padding: 18px; border-radius: 10px;
+          width: min(560px, 92vw); max-height: 86vh; overflow-y: auto;
+          box-shadow: 0 10px 40px rgba(0,0,0,.5); }
+  .card h2 { margin: 0 0 10px; font-size: 20px; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+         padding: 7px 0; border-bottom: 1px solid #3d3d3d; }
+  .row small { color: #b5b5b5; display: block; }
+  .row button { background: #4caf50; color: #fff; border: 0; border-radius: 6px;
+                padding: 7px 14px; cursor: pointer; font-size: 13px; }
+  .row button.off { background: #666; }
+  .card .close { margin-top: 12px; width: 100%; padding: 9px; background: #555;
+                 color: #fff; border: 0; border-radius: 6px; cursor: pointer; }
+  .card h3 { margin: 14px 0 6px; font-size: 15px; color: #ffd54f; }
+  #modCode { width: 100%; min-height: 110px; box-sizing: border-box; background: #1b1b1b;
+             color: #c8ffd8; border: 1px solid #444; border-radius: 6px;
+             font: 12px/1.4 monospace; padding: 8px; resize: vertical; }
+  .card textarea::placeholder { color: #666; }
+  .hint { color: #9e9e9e; font-size: 12px; margin-top: 6px; }
+  #runMod { margin-top: 8px; width: 100%; padding: 9px; background: #0288d1; color: #fff;
+            border: 0; border-radius: 6px; cursor: pointer; font-size: 14px; }
+</style>
+</head>
+<body>
+<div id="hud"></div>
+<div id="pausePanel" class="panel" style="display:none">
+  <div class="card">
+    <h2>Пауза</h2>
+    <div class="row"><span>Вернуться в игру</span>
+      <button onclick="closePause()">Продолжить</button></div>
+    <div class="row"><span>Начать заново</span>
+      <button onclick="newWorld()">Новый мир</button></div>
+    <div class="row"><span>Сохранить мир в файл</span>
+      <button onclick="saveWorld()">Сохранить</button></div>
+    <div class="row"><span>Загрузить мир из файла</span>
+      <button onclick="loadWorld()">Загрузить</button></div>
+  </div>
+</div>
+
+<div id="modsPanel" class="panel" style="display:none">
+  <div class="card">
+    <h2>⚙ Моды и читы</h2>
+    <div id="modList"></div>
+    <h3>🧩 Свой мод на JS</h3>
+    <textarea id="modCode" spellcheck="false" placeholder="API.onUpdate(dt => { API.player.vel.y += 4*dt; });&#10;// или API.addCommand('laser', a => {...})"></textarea>
+    <button id="runMod" onclick="applyUserMod()">▶ Запустить мод</button>
+    <div class="hint">Доступно: API.onUpdate, API.addCommand, API.player, API.mobs,
+      API.inv, API.mods, API.cmd, API.spawnParticles, API.explode, API.damageMob и др.</div>
+    <div id="modCustom"></div>
+    <button class="close" onclick="closeMods()">Закрыть</button>
+  </div>
+</div>
+
+<div id="craftPanel" class="panel" style="display:none">
+  <div class="card">
+    <h2>🔨 Крафт</h2>
+    <div id="craftList"></div>
+    <button class="close" onclick="closeCraft()">Закрыть</button>
+  </div>
+</div>
+
+<input type="file" id="fileIn" accept=".json" style="display:none">
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ================= БЛОКИ =================
+const BLOCKS = {
+  1: { name:'Трава',    color:0x59a832, hardness:0.6 },
+  2: { name:'Земля',    color:0x8a5a2b, hardness:0.5 },
+  3: { name:'Камень',   color:0x8f8f8f, hardness:1.5 },
+  4: { name:'Дерево',   color:0x5c4028, hardness:1.0 },
+  5: { name:'Листва',   color:0x2e7d32, hardness:0.2 },
+  6: { name:'Песок',    color:0xd8cf8a, hardness:0.5 },
+  7: { name:'Уголь',    color:0x2a2a2a, hardness:2.0 },
+  8: { name:'Железо',   color:0xd8af93, hardness:2.5 },
+  9: { name:'Золото',   color:0xf5d327, hardness:2.5 },
+  10:{ name:'Алмаз',    color:0x4aedd9, hardness:3.0 },
+  11:{ name:'Доски',    color:0xb28550, hardness:0.8 },
+  12:{ name:'Бедрок',   color:0x373739, hardness:Infinity },
+  13:{ name:'Стекло',   color:0xcfe8f5, hardness:0.4, transparent:true },
+  14:{ name:'Кирпич',   color:0xa84438, hardness:1.2 },
+  15:{ name:'TNT',      color:0xd43b3b, hardness:0.3 },
+  16:{ name:'Снег',     color:0xf0f4f8, hardness:0.3 },
+  17:{ name:'Светокамень', color:0xffd966, hardness:0.4, light:true },
+  18:{ name:'Вода',     color:0x3d7dd8, hardness:Infinity, transparent:true, liquid:true },
+  19:{ name:'Песчаник', color:0xcfc39a, hardness:1.2 },
+  20:{ name:'Незеррак', color:0x7a2a24, hardness:1.1 },
+  21:{ name:'Лава',     color:0xff7814, hardness:Infinity, transparent:true, liquid:true },
+  22:{ name:'Обсидиан', color:0x1a1026, hardness:6.0 },
+  23:{ name:'Эндерняк', color:0xe0e0a8, hardness:1.0 },
+  24:{ name:'Верстак',  color:0x9a7134, hardness:1.2 },
+};
+const BEDROCK = 12, TNT = 15, GLOW = 17, WATER = 18, LAVA = 21, TABLE = 24;
+const ORES = [7, 8, 9, 10];
+const HEIGHT = 40, SIZE = 48, WATER_LEVEL = 12;
+
+// ================= ПРЕДМЕТЫ =================
+const ITEMS = {
+  101: { name:'Палка',           color:'#a0824f' },
+  102: { name:'Уголь',           color:'#1b1b1b' },
+  103: { name:'Железный слиток', color:'#d8dde4' },
+  104: { name:'Золотой слиток',  color:'#f5d327' },
+  105: { name:'Алмаз',           color:'#4aedd9' },
+  106: { name:'Железная руда',   color:'#c9a184' },
+  107: { name:'Золотая руда',    color:'#e8c56a' },
+  110: { name:'Деревянная кирка', color:'#a0743c', tool:'pick',  tier:1, mult:2, dur:60 },
+  111: { name:'Каменная кирка',   color:'#8f8f8f', tool:'pick',  tier:2, mult:3, dur:132 },
+  112: { name:'Железная кирка',   color:'#d8dde4', tool:'pick',  tier:3, mult:5, dur:250 },
+  113: { name:'Алмазная кирка',   color:'#4aedd9', tool:'pick',  tier:4, mult:8, dur:1000 },
+  120: { name:'Деревянный меч',   color:'#a0743c', tool:'sword', tier:1, dmg:2, dur:60 },
+  121: { name:'Каменный меч',     color:'#8f8f8f', tool:'sword', tier:2, dmg:3, dur:132 },
+  122: { name:'Железный меч',     color:'#d8dde4', tool:'sword', tier:3, dmg:4, dur:250 },
+  123: { name:'Алмазный меч',     color:'#4aedd9', tool:'sword', tier:4, dmg:6, dur:1000 },
+};
+const RECIPES = [
+  { out:11,  n:4, need:{4:1},         label:'4 доски ← 1 дерево' },
+  { out:101, n:4, need:{11:2},        label:'4 палки ← 2 доски' },
+  { out:24,  n:1, need:{11:4},        label:'Верстак ← 4 доски' },
+  { out:110, n:1, need:{11:3,101:2},  label:'Деревянная кирка ← 3 доски + 2 палки' },
+  { out:111, n:1, need:{13:3,101:2},  label:'Каменная кирка ← 3 камня + 2 палки' },
+  { out:112, n:1, need:{103:3,101:2}, label:'Железная кирка ← 3 слитка + 2 палки' },
+  { out:113, n:1, need:{105:3,101:2}, label:'Алмазная кирка ← 3 алмаза + 2 палки' },
+  { out:120, n:1, need:{11:2,101:1},  label:'Деревянный меч ← 2 доски + 1 палка' },
+  { out:121, n:1, need:{13:2,101:1},  label:'Каменный меч ← 2 камня + 1 палка' },
+  { out:122, n:1, need:{103:2,101:1}, label:'Железный меч ← 2 слитка + 1 палка' },
+  { out:123, n:1, need:{105:2,101:1}, label:'Алмазный меч ← 2 алмаза + 1 палка' },
+];
+const SMELT = [
+  { out:103, n:1, need:{106:1,102:1}, label:'Железный слиток ← руда + уголь' },
+  { out:104, n:1, need:{107:1,102:1}, label:'Золотой слиток ← руда + уголь' },
+];

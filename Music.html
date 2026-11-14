@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Музыка | RCBaing</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: rgba(255, 255, 255, 0.06);
+      --border: rgba(255, 255, 255, 0.12);
+      --accent: #ff6b81;
+      --text: #ffffff;
+      --muted: #a0a0b0;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    h1 {
+      margin-bottom: 30px;
+      color: var(--accent);
+      text-align: center;
+      text-shadow: 0 0 12px rgba(255,107,129,0.3);
+    }
+
+    /* Чат-интерфейс */
+    .chat-container {
+      width: 100%;
+      max-width: 500px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+      display: flex;
+      flex-direction: column;
+      height: 400px;
+      background: rgba(0,0,0,0.3);
+    }
+
+    .messages-area {
+      flex: 1;
+      padding: 16px;
+      overflow-y: auto;
+    }
+
+    .message {
+      margin-bottom: 12px;
+      line-height: 1.4;
+      max-width: 85%;
+    }
+
+    .msg-user {
+      text-align: right;
+      margin-left: auto;
+      background: rgba(100,100,100,0.2);
+      padding: 8px 12px;
+      border-radius: 8px;
+    }
+    .msg-bot {
+      text-align: left;
+      color: var(--muted);
+      background: rgba(255,255,255,0.05);
+      padding: 8px 12px;
+      border-radius: 8px;
+    }
+
+    .input-area {
+      padding: 8px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 8px;
+    }
+
+    input[type="text"] {
+      flex: 1;
+      padding: 14px 18px;
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 1rem;
+      outline: none;
+    }
+    input[type="text"]:focus {
+      border-color: var(--accent);
+    }
+
+    button.action-btn {
+      padding: 0 22px;
+      background: var(--accent);
+      color: black;
+      border: none;
+      border-radius: 8px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    button.action-btn:hover {
+      filter: brightness(1.1);
+    }
+
+    /* Сетка треков */
+    .music-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 16px;
+      width: 100%;
+      max-width: 900px;
+      margin-top: 24px;
+    }
+
+    .track-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      transition: transform 0.2s, border-color 0.2s;
+    }
+    .track-card:hover {
+      transform: translateY(-4px);
+      border-color: var(--accent);
+    }
+
+    img.cover {
+      width: 100%;
+      height: 180px;
+      object-fit: cover;
+      border-radius: 8px;
+      display: block;
+    }
+
+    .controls-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    audio {
+      width: 100%;
+      margin-top: 8px;
+    }
+
+    a.download-btn {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 600;
+      transition: color 0.2s;
+      white-space: nowrap;
+    }
+    a.download-btn:hover {
+      color: #ff4757;
+    }
+
+    /* Админка */
+    #admin-panel {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.95);
+      backdrop-filter: blur(4px);
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 20px;
+    }
+
+    .admin-form {
+      background: var(--panel);
+      padding: 32px;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      width: 100%;
+      max-width: 450px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .admin-input {
+      padding: 12px;
+      background: rgba(0,0,0,0.5);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: white;
+      font-size: 1rem;
+    }
+
+    textarea.admin-input {
+      min-height: 80px;
+      resize: vertical;
+    }
+
+    button.admin-btn {
+      padding: 12px;
+      background: var(--accent);
+      border: none;
+      border-radius: 8px;
+      color: black;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    button.admin-btn:hover {
+      filter: brightness(1.1);
+    }
+
+    .hidden { display: none; }
+    .error-msg { color: #ff6b81; margin-top: 8px; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <h1>🎧 Музыка</h1>
+
+  <!-- Чат-интерфейс -->
+  <div class="chat-container">
+    <div class="messages-area" id="chatMessages">
+      <div class="message msg-bot">Привет! Я музыкальный помощник. Напиши название песни или артиста, и я её найду. Например: «Белые розы» или «Шатунов».</div>
+    </div>
+    <div class="input-area">
+      <input type="text" id="chatInput" placeholder="Например: Белые розы..." onkeypress="handleEnter(event)">
+      <button class="action-btn" onclick="handleChatSubmit()">➤</button>
+    </div>
+  </div>
+
+  <!-- Сетка треков -->
+  <div class="music-grid" id="musicGrid">
+    <!-- Сюда JS добавит карточки треков -->
+  </div>
+
+  <!-- Кнопка админки -->
+  <button class="action-btn" style="margin-top: 32px;" onclick="toggleAdmin()">🔐 Админка</button>
+
+  <!-- Панель админки -->
+  <div id="admin-panel">
+    <div class="admin-form">
+      <h3>Админ-панель</h3>
+      <p style="color:var(--muted); font-size:0.9rem;">Введите пароль для доступа к управлению треками.</p>
+      <input type="password" id="adminPassword" class="admin-input" placeholder="Пароль">
+      <button class="admin-btn" onclick="checkAdminPassword()">Войти</button>
+      
+      <div id="adminContent" class="hidden">
+        <h4>Добавить трек</h4>
+        <input type="text" id="trackTitle" class="admin-input" placeholder="Название трека">
+        <input type="text" id="trackArtist" class="admin-input" placeholder="Исполнитель">
+        <input type="text" id="trackCover" class="admin-input" placeholder="Имя файла обложки (в папке covers/)">
+        <textarea id="trackDesc" class="admin-input" placeholder="Описание трека"></textarea>
+        <input type="text" id="trackFile" class="admin-input" placeholder="Имя файла трека (в папке audio/)">
+        <button class="admin-btn" onclick="addTrack()">Добавить трек</button>
+        
+        <hr style="border-color: var(--border);">
+        <p style="font-size:0.85rem; color:var(--muted);">
+          Файлы должны лежать в папках:<br>
+          - <code>audio/</code> — для mp3<br>
+          - <code>covers/</code> — для обложек
+        </p>
+        <button class="admin-btn" style="background:#ff4757;" onclick="logoutAdmin()">Выйти</button>
+      </div>
+      <p id="adminError" class="hidden error-msg"></p>
+    </div>
+  </div>
+
+  <script>
+// === КОНФИГУРАЦИЯ ===
+const FILE_NAME = 'Music.rcb';
+let tracks = [];
+const ADMIN_PASSWORD = 'admin123';
+let isAdminLoggedIn = false;
+let hasSavedOnce = false; // Флаг: предлагали ли уже сохранить файл
+
+// --- УТИЛИТЫ ---
+function escapeHtml(str) {
+  if (!str) return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+// === ИНИЦИАЛИЗАЦИЯ: Если нет файла — сразу предлагаем сохранить ===
+async function initTracks() {
+  // Сначала проверяем, есть ли данные в localStorage (чтобы не терять при обновлении)
+  const stored = localStorage.getItem('rcb_tracks');
+  if (stored) {
+    try {
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed)) {
+        tracks = parsed;
+        console.log('✅ Данные загружены из памяти браузера');
+        renderTracks();
+        return;
+      }
+    } catch (e) {
+      console.warn('⚠️ localStorage повреждён, сбрасываем на дефолт');
+    }
+  }
+
+  // Если не загрузили из localStorage — ставим дефолтные треки
+  tracks = [
+    {
+      id: '1',
+      title: 'Белые розы',
+      artist: 'Юрий Шатунов',
+      cover: 'covers/belye_rozy.jpg',
+      description: 'Легендарный хит 80-х от Юрия Шатунова.',
+      file: 'audio/belye_rozy.mp3'
+    },
+    {
+      id: '2',
+      title: 'Седая ночь',
+      artist: 'Юрий Шатунов',
+      cover: 'covers/sedaya_noch.jpg',
+      description: 'Ещё один культовый трек Шатунова.',
+      file: 'audio/sedaya_noch.mp3'
+    },
+    {
+      id: '3',
+      title: 'Что такое осень',
+      artist: 'ДДТ',
+      cover: 'covers/chto_takoe_osen.jpg',
+      description: 'Глубокая лирика от группы ДДТ.',
+      file: 'audio/chto_takoe_osen.mp3'
+    }
+  ];
+
+  console.log('⚠️ Файл не найден. При первом добавлении трека будет предложено сохранить Music.rcb');
+  renderTracks();
+}
+
+document.addEventListener('DOMContentLoaded', initTracks);
+
+// === СОХРАНЕНИЕ В ФАЙЛ ===
+async function saveTracksToFile() {
+  const jsonData = JSON.stringify(tracks, null, 2);
+  const blob = new Blob([jsonData], { type: 'application/json' });
+
+  try {
+    const handle = await window.showSaveFilePicker({
+      suggestedName: FILE_NAME,
+      types: [{ description: 'RCB File', accept: { 'application/json': ['.rcb'] } }]
+    });
+
+    const writable = await handle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+
+    console.log('💾 Файл успешно сохранен!');
+    alert('Треки сохранены в файл ' + FILE_NAME + '. Теперь при добавлении новых треков файл будет обновляться.');
+    hasSavedOnce = true;
+  } catch (e) {
+    if (e.name !== 'AbortError') {
+      console.error('❌ Ошибка сохранения файла:', e);
+      alert('Не удалось сохранить файл. Проверьте консоль браузера.');
+    }
+  }
+}
+
+// === ЧАТ-ФУНКЦИОНАЛ (без изменений) ===
+function handleEnter(e) { if (e.key === 'Enter') handleChatSubmit(); }
+
+function handleChatSubmit() {
+  const input = document.getElementById('chatInput');
+  const query = input.value.trim().toLowerCase();
+  if (!query) return;
+
+  addMessage(query, 'user');
+  input.value = '';
+
+  const foundTrack = tracks.find(t =>
+    t.title.toLowerCase().includes(query) ||
+    t.artist.toLowerCase().includes(query)
+  );
+
+  if (foundTrack) {
+    addMessage(`Нашёл: ${foundTrack.title} — ${foundTrack.artist}. Сейчас включу!`, 'bot');
+    playTrack(foundTrack);
+  } else {
+    addMessage('Не нашёл такой трек. Попробуй другое название или имя артиста.', 'bot');
+  }
+}
+
+function addMessage(text, sender) {
+  const area = document.getElementById('chatMessages');
+  if (!area) return;
+  const div = document.createElement('div');
+  div.className = `message msg-${sender}`;
+  div.textContent = text;
+  area.appendChild(div);
+  area.scrollTop = area.scrollHeight;
+}
+
+// === ОТРИСОВКА ТРЕКОВ (без изменений) ===
+function renderTracks() {
+  const grid = document.getElementById('musicGrid');
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  tracks.forEach(track => {
+    const card = document.createElement('div');
+    card.className = 'track-card';
+    card.innerHTML = `
+      <img src="${track.cover}" alt="${escapeHtml(track.title)}" class="cover" onerror="this.src='https://via.placeholder.com/240x180?text=No+Image'">
+      <div>
+        <h3 style="margin:0; font-size:1rem;">${escapeHtml(track.title)}</h3>
+        <p style="margin:4px 0; color:var(--muted); font-size:0.9rem;">${escapeHtml(track.artist)}</p>
+        <p style="margin:8px 0 16px 0; font-size:0.85rem; line-height:1.3;">${escapeHtml(track.description)}</p>
+      </div>
+      <div class="controls-row">
+        <audio controls preload="metadata">
+          <source src="${track.file}" type="audio/mpeg">
+          Ваш браузер не поддерживает аудио.
+        </audio>
+        <a href="${track.file}" class="download-btn" download>⬇️ Скачать</a>
+      </div>
+    `;
+    grid.appendChild(card);
+  });
+}
+
+function playTrack(track) {
+  const audioEl = document.querySelector('audio');
+  if (audioEl) {
+    audioEl.src = track.file;
+    audioEl.play().catch(e => console.log('Автовоспроизведение заблокировано браузером'));
+  }
+  const card = Array.from(document.querySelectorAll('.track-card')).find(c =>
+    c.innerHTML.includes(track.title)
+  );
+  if (card) card.scrollIntoView({ behavior: 'smooth' });
+}
+
+// === АДМИНКА ===
+function toggleAdmin() {
+  const panel = document.getElementById('admin-panel');
+  if (!panel) return;
+  panel.style.display = panel.style.display === 'flex' ? 'none' : 'flex';
+  if (panel.style.display === 'flex') {
+    document.getElementById('adminPassword').focus();
+    document.getElementById('adminError').classList.add('hidden');
+  }
+}
+
+function checkAdminPassword() {
+  const pwd = document.getElementById('adminPassword').value;
+  const error = document.getElementById('adminError');
+  const content = document.getElementById('adminContent');
+
+  if (pwd === ADMIN_PASSWORD) {
+    isAdminLoggedIn = true;
+    error.classList.add('hidden');
+    content.classList.remove('hidden');
+    document.getElementById('adminPassword').value = '';
+  } else {
+    error.textContent = 'Неверный пароль!';
+    error.classList.remove('hidden');
+  }
+}
+
+function logoutAdmin() {
+  isAdminLoggedIn = false;
+  document.getElementById('admin-panel').style.display = 'none';
+  location.reload();
+}
+
+function addTrack() {
+  const title = document.getElementById('trackTitle').value.trim();
+  const artist = document.getElementById('trackArtist').value.trim();
+  const cover = document.getElementById('trackCover').value.trim();
+  const desc = document.getElementById('trackDesc').value.trim();
+  const file = document.getElementById('trackFile').value.trim();
+
+  if (!title || !file) {
+    alert('Название и имя файла трека обязательны!');
+    return;
+  }
+
+  const newTrack = {
+    id: Date.now().toString(),
+    title,
+    artist,
+    cover: cover ? `covers/${cover}` : 'https://via.placeholder.com/240x180?text=No+Image',
+    description: desc,
+    file: `audio/${file}`
+  };
+
+  tracks.unshift(newTrack);
+
+  // Сохраняем в localStorage, чтобы данные не пропали при перезагрузке страницы
+  localStorage.setItem('rcb_tracks', JSON.stringify(tracks));
+  
+  // ГЛАВНОЕ: Сохраняем изменения в реальный файл на диске
+  saveTracksToFile();
+
+  renderTracks();
+
+  // Очистка формы
+  document.getElementById('trackTitle').value = '';
+  document.getElementById('trackArtist').value = '';
+  document.getElementById('trackCover').value = '';
+  document.getElementById('trackDesc').value = '';
+  document.getElementById('trackFile').value = '';
+}
+
+  </script>
+  </body>
+  </html>

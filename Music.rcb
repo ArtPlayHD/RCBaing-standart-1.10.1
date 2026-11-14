@@ -1,0 +1,34 @@
+[
+  {
+    "id": "1793518344401",
+    "title": "sas",
+    "artist": "sasa",
+    "cover": "covers/sasa",
+    "description": "sasa",
+    "file": "audio/asasa"
+  },
+  {
+    "id": "1",
+    "title": "Белые розы",
+    "artist": "Юрий Шатунов",
+    "cover": "covers/belye_rozy.jpg",
+    "description": "Легендарный хит 80-х от Юрия Шатунова.",
+    "file": "audio/belye_rozy.mp3"
+  },
+  {
+    "id": "2",
+    "title": "Седая ночь",
+    "artist": "Юрий Шатунов",
+    "cover": "covers/sedaya_noch.jpg",
+    "description": "Ещё один культовый трек Шатунова.",
+    "file": "audio/sedaya_noch.mp3"
+  },
+  {
+    "id": "3",
+    "title": "Что такое осень",
+    "artist": "ДДТ",
+    "cover": "covers/chto_takoe_osen.jpg",
+    "description": "Глубокая лирика от группы ДДТ.",
+    "file": "audio/chto_takoe_osen.mp3"
+  }
+]
