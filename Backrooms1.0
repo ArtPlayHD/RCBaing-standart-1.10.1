@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Backrooms 3D (CSS only)</title>
+  <style>
+    :root {
+      --bg: #1a1a0e;
+      --wall: #f5f5d3;
+      --floor: #dcdcc0;
+      --ceiling: #e0e0c0;
+      --lamp: #fffa;
+      --monster: #221100;
+    }
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: var(--bg);
+      color: #fff;
+      font-family: system-ui, Arial, sans-serif;
+      user-select: none;
+    }
+    #corridor {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      perspective: 800px;
+      overflow: hidden;
+    }
+    .segment {
+      position: absolute;
+      top: 0; left: 50%;
+      transform-origin: center center;
+      border: 2px solid rgba(0,0,0,0.2);
+      box-shadow: 0 0 20px rgba(0,0,0,0.3);
+    }
+    .wall {
+      width: 400px; height: 300px;
+      background: repeating-linear-gradient(
+        0deg, var(--wall), var(--wall) 120px, #fff 120px, #fff 240px
+      );
+      background-size: 100% 240px;
+    }
+    .floor {
+      width: 400px; height: 400px;
+      background: var(--floor);
+      transform: rotateX(90deg) translateY(-200px);
+      border-bottom: none;
+    }
+    .ceiling {
+      width: 400px; height: 400px;
+      background: var(--ceiling);
+      transform: rotateX(-90deg) translateY(-200px);
+      border-top: none;
+    }
+    /* Лампы */
+    .lamp {
+      position: absolute;
+      top: 80px; left: 50%;
+      width: 240px; height: 6px;
+      background: var(--lamp);
+      box-shadow: 0 0 30px var(--lamp), inset 0 0 4px #fff;
+      transform: translateX(-50%);
+      animation: flicker 2.4s infinite;
+    }
+    @keyframes flicker {
+      0%, 100% { opacity: 1; box-shadow: 0 0 30px var(--lamp), inset 0 0 4px #fff; }
+      49% { opacity: 0.6; box-shadow: 0 0 10px var(--lamp), inset 0 0 2px #fff; }
+      50% { opacity: 0; box-shadow: none; }
+    }
+    /* Монстр */
+    #monster {
+      position: absolute;
+      top: 50%; left: 50%;
+      width: 80px; height: 160px;
+      background: var(--monster);
+      border-radius: 10px 10px 0 0;
+      transform: translate(-50%, -50%) scale(0.1) translateZ(1200px);
+      opacity: 0;
+      filter: blur(3px);
+      transition: transform 0.1s linear, opacity 0.1s;
+      box-shadow: 0 0 20px rgba(100, 0, 0, 0.8);
+    }
+    /* Шум экрана */
+    #noise {
+      position: absolute; inset: 0;
+      pointer-events: none;
+      background-image: url('data:image/svg+xml,%3Csvg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"%3E%3Cfilter id="n" color-interpolation-filters="sRGB"%3E%3CfeTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3"/%3E%3C/filter%3E%3Crect width="100%" height="100%" filter="url(%23n)" opacity="0.15"/%3E%3C/svg%3E');
+      animation: noise-anim 10s infinite linear;
+    }
+    @keyframes noise-anim {
+      from { transform: translate(0, 0); }
+      to { transform: translate(-20px, -20px); }
+    }
+    /* UI */
+    #ui {
+      position: absolute; top: 20px; left: 20px;
+      font-size: 18px; text-shadow: 1px 1px 3px #000;
+      z-index: 10;
+    }
+    #controls {
+      position: absolute; bottom: 20px; left: 20px;
+      max-width: 400px; background: rgba(0,0,0,0.6);
+      padding: 12px; border-radius: 8px;
+      backdrop-filter: blur(4px);
+    }
+  </style>
+</head>
+<body>
+  <div id="noise"></div>
+  <div id="corridor">
+    <div id="ui">Дистанция до монстра: <span id="dist">∞</span> м</div>
+    <div id="controls">
+      W — вперёд<br>
+      S — назад<br>
+      A/D — поворот коридора<br>
+      Клик по экрану, чтобы захватить мышь
+    </div>
+    <!-- Сегменты коридора -->
+    <div class="segment" id="seg-1"><div class="wall"></div><div class="floor"></div><div class="ceiling"></div></div>
+    <div class="segment" id="seg-2"><div class="wall"></div><div class="floor"></div><div class="ceiling"></div></div>
+    <div class="segment" id="seg-3"><div class="wall"></div><div="floor"></div><div class="ceiling"></div></div>
+    <div class="segment" id="seg-4"><div class="wall"></div><div class="floor"></div><div class="ceiling"></div></div>
+    <div class="segment" id="seg-5"><div class="wall"></div><div class="floor"></div><div class="ceiling"></div></div>
+    <div class="lamp"></div>
+    <div id="monster"></div>
+  </div>
+
+  <script>
+    const corridor = document.getElementById('corridor');
+    const segments = document.querySelectorAll('.segment');
+    const monster = document.getElementById('monster');
+    const distEl = document.getElementById('dist');
+
+    let rotation = 0;          // поворот коридора
+    let depth = 0;             // «движение» вперёд
+    let monsterDist = 1200;    // дистанция монстра
+    let isLocked = false;
+
+    // Захват мыши
+    corridor.addEventListener('click', () => {
+      corridor.requestPointerLock();
+    });
+    document.addEventListener('pointerlockchange', () => {
+      isLocked = document.pointerLockElement === corridor;
+    });
+
+    // Управление
+    const keys = {};
+    window.addEventListener('keydown', e => keys[e.code] = true);
+    window.addEventListener('keyup', e => keys[e.code] = false);
+
+    function update() {
+      if (!isLocked) return;
+
+      // W/S — движение вперёд/назад
+      if (keys['KeyW']) depth += 15;
+      if (keys['KeyS']) depth -= 15;
+
+      // A/D — поворот
+      if (keys['KeyA']) rotation -= 2;
+      if (keys['KeyD']) rotation += 2;
+
+      // Ограничения
+      depth = Math.max(-200, Math.min(depth, 1200));
+      rotation = ((rotation % 360) + 360) % 360;
+
+      // Вращаем весь коридор
+      corridor.style.transform = `rotateY(${rotation}deg)`;
+
+      // Двигаем сегменты по Z (иллюзия движения)
+      segments.forEach((seg, i) => {
+        const z = 600 - i * 350 + depth;
+        seg.style.transform = `translateZ(${z}px) scale(${Math.max(0.2, 1 - Math.abs(z)/1200)})`;
+        // Анимация обоев
+        seg.querySelector('.wall').style.backgroundPosition = `0 ${depth * 0.4}px`;
+      });
+
+      // Монстр: появляется, когда игрок «подходит»
+      monsterDist = 1200 - depth;
+      distEl.textContent = Math.round(monsterDist);
+
+      const monsterScale = Math.min(1, (1200 - monsterDist) / 400);
+      const opacity = Math.max(0, (1200 - monsterDist) / 1200);
+
+      monster.style.opacity = opacity;
+      monster.style.transform = `
+        translate(-50%, -50%)
+        scale(${monsterScale * 1.2})
+        translateZ(${monsterDist}px)
+      `;
+
+      requestAnimationFrame(update);
+    }
+
+    update();
+  </script>
+</body>
+</html>

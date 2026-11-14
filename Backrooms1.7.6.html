@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Backrooms Infinite: RCB Edition</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+    body { background: #040406; color: #fff; font-family: monospace; overflow: hidden; }
+    .scanlines {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background-image: linear-gradient(rgba(255,255,255,0.05) 50%, transparent 50%);
+      background-size: 100% 4px; pointer-events: none; z-index: 999;
+    }
+    #wrapper { position: relative; width: 100vw; height: 100vh; }
+    #menu {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: radial-gradient(#111 0%, #000 100%); display: flex;
+      flex-direction: column; justify-content: center; align-items: center;
+      z-index: 10; text-align: center;
+    }
+    h1 { font-size: 4rem; text-shadow: 0 0 20px #ff4444; letter-spacing: 6px; margin-bottom: 1.5rem; }
+    .btn {
+      padding: 1rem 3rem; font-size: 1.6rem; background: #111; color: #fff;
+      border: 2px solid #ff4444; cursor: pointer; text-transform: uppercase;
+      transition: all 0.2s; font-family: monospace;
+    }
+    .btn:hover { background: #333; transform: scale(1.05); }
+    #menu p { color: #777; margin-top: 1.5rem; font-size: 0.95rem; line-height: 1.7; }
+    #game { display: none; position: relative; width: 100%; height: 100%; background: #08080a; }
+    canvas#game-canvas { display: block; width: 100vw; height: 100vh; }
+    #hud {
+      position: absolute; top: 12px; left: 12px; right: 12px;
+      font-size: 1.1rem; background: rgba(0,0,0,0.8); padding: 8px 14px;
+      border-left: 6px solid #00aaff; border-right: 6px solid #ff4444;
+      display: flex; justify-content: space-between; z-index: 5;
+    }
+    #key-debug {
+      position: absolute; bottom: 12px; left: 12px; z-index: 5;
+      font-size: 1rem; color: #555; background: rgba(0,0,0,0.8);
+      padding: 8px 14px; border: 1px solid #333;
+    }
+    #key-debug b { color: #00ffaa; }
+    #minimap-container {
+      position: absolute; bottom: 12px; right: 12px;
+      width: 160px; height: 160px; background: rgba(0,0,0,0.7);
+      border: 1px solid #444; overflow: hidden; z-index: 5;
+    }
+    #minimap { width: 100%; height: 100%; }
+    #end {
+      display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: #000; flex-direction: column;
+      justify-content: center; align-items: center; z-index: 20;
+    }
+    #end-message {
+      font-size: 3rem; color: #ff4444; margin-bottom: 1.5rem; text-align: center;
+      text-shadow: 0 0 15px rgba(255, 68, 68, 0.6);
+    }
+    #end-stats { color: #888; margin-bottom: 1.5rem; font-size: 1.1rem; }
+  </style>
+</head>
+<body>
+  <div class="scanlines"></div>
+  <div id="wrapper">
+    <div id="menu">
+      <h1>BACKROOMS INFINITE</h1>
+      <button class="btn" id="btn-start">НАЧАТЬ</button>
+      <p>WASD / стрелки — движение<br>
+         Мимик охотится в темноте, бактерия — на свету<br>
+         Прячься за ящиками, беги по коридорам</p>
+    </div>
+
+    <div id="game">
+      <div id="hud">
+        <span>ДИСТАНЦИЯ: <b id="hud-dist">0</b> м</span>
+        <span>РЕКОРД: <b id="hud-rec">0</b> м</span>
+      </div>
+      <div id="key-debug">КЛАВИШИ: <b id="key-list">—</b></div>
+      <canvas id="game-canvas"></canvas>
+      <div id="minimap-container">
+        <canvas id="minimap" width="160" height="160"></canvas>
+      </div>
+      <div id="end">
+        <div id="end-message">МИМИК ПОЙМАЛ ТЕБЯ!</div>
+        <div id="end-stats"></div>
+        <button class="btn" id="btn-restart">ПОПРОБОВАТЬ СНОВА</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      // --- КОНФИГУРАЦИЯ ---
+      const TILE = 64;
+      const CELL = 4;
+      const PLAYER_SPEED = 5.5;
+      const MIMIC_SPEED = 7.2;
+      const BACTERIA_SPEED = 3.8;
+      const SPAWN_DIST_MIMIC = 300;
+      const SPAWN_DIST_BACTERIA = 600;
+      const DEAD_ZONE_X = 120;
+      const DEAD_ZONE_Y = 100;
+      const CAM_SMOOTH = 0.08;
+      const MINIMAP_SIZE = 160;
+      const MM_SCALE = 0.12;
+      const PLAYER_SIZE = 24;
+
+      const BG = '#08080a';
+      const WALL = '#1a1a1d';
+      const BOX = '#332b23';
+      const BOX_EDGE = '#554433';
+      const PLAYER_COLOR = '#00ffff';
+      const MIMIC_COLOR = '#ff4444';
+      const BACTERIA_COLOR = '#44ff44';
+
+      const state = {
+        player: { x: 0, y: 0 },
+        cam: { x: 0, y: 0 },
+        mimic: { x: -9999, y: -9999, active: false, flash: 0 },
+        bacteria: { x: -9999, y: -9999, active: false, flash: 0 },
+        distance: 0,
+        record: 0,
+        reason: '',
+        gameRunning: false,
+        keys: {
+          ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false,
+          KeyW: false, KeyA: false, KeyS: false, KeyD: false,
+        },
+      };
+
+      let canvas, ctx, miniCanvas, miniCtx;
+
+      // --- ГЕНЕРАЦИЯ МИРА: коридоры + блоки с проходами ---
+      function getTile(tx, ty) {
+        const lx = ((tx % CELL) + CELL) % CELL;
+        const ly = ((ty % CELL) + CELL) % CELL;
+        if (lx === 0 || ly === 0) return 0; // коридоры всегда свободны
+
+        const cx = Math.floor(tx / CELL);
+        const cy = Math.floor(ty / CELL);
+        let h = ((cx * 73856093) ^ (cy * 19349663)) >>> 0;
+        h = (h * 2654435761) % 100;
+
+        if (h < 55) {
+          // стена, но в половине блоков — проход в центре
+          if (h % 2 === 0 && lx === 2 && ly === 2) return 0;
+          return 1;
+        }
+        if (h < 70) return 2;  // ящики (укрытие)
+        if (h < 85) return 0;  // открытая комната
+        return 1;
+      }
+
+      // --- КАМЕРА С МЁРТВОЙ ЗОНОЙ ---
+      function updateCamera() {
+        const dx = state.player.x - state.cam.x;
+        if (Math.abs(dx) > DEAD_ZONE_X) {
+          state.cam.x = state.player.x - DEAD_ZONE_X * (dx > 0 ? 1 : -1);
+        }
+        const dy = state.player.y - state.cam.y;
+        if (Math.abs(dy) > DEAD_ZONE_Y) {
+          state.cam.y = state.player.y - DEAD_ZONE_Y * (dy > 0 ? 1 : -1);
+        }
+        state.cam.x += (state.player.x - state.cam.x) * CAM_SMOOTH;
+        state.cam.y += (state.player.y - state.cam.y) * CAM_SMOOTH;
+      }
+
+      // Мир -> экран
+      function w2s(x, y) {
+        return {
+          x: x - state.cam.x + canvas.width / 2,
+          y: y - state.cam.y + canvas.height / 2,
+        };
+      }
+
+      // --- КОЛЛИЗИИ ---
+      function tilesAround(x, y, radius) {
+        radius = radius || 3;
+        const tiles = [];
+        const x0 = Math.floor((x - radius * TILE) / TILE);
+        const x1 = Math.floor((x + radius * TILE) / TILE) + 1;
+        const y0 = Math.floor((y - radius * TILE) / TILE);
+        const y1 = Math.floor((y + radius * TILE) / TILE) + 1;
+        for (let ty = y0; ty <= y1; ty++) {
+          for (let tx = x0; tx <= x1; tx++) {
+            const t = getTile(tx, ty);
+            if (t) tiles.push({ tx, ty, type: t });
+          }
+        }
+        return tiles;
+      }
+
+      function collides(x, y, size, tiles) {
+        for (const t of tiles) {
+          if (t.type === 1) { // стены блокируют, ящики проходимы (укрытие)
+            const tx = t.tx * TILE, ty = t.ty * TILE;
+            if (x - size / 2 < tx + TILE && x + size / 2 > tx &&
+                y - size / 2 < ty + TILE && y + size / 2 > ty) {
+              return true;
+            }
+          }
+        }
+        return false;
+      }
+
+      function behindBox(tiles) {
+        const px = state.player.x, py = state.player.y;
+        for (const t of tiles) {
+          if (t.type !== 2) continue;
+          const cx = t.tx * TILE + TILE / 2;
+          const cy = t.ty * TILE + TILE / 2;
+          if (Math.abs(px - cx) < TILE * 0.65 && Math.abs(py - cy) < TILE * 0.65) {
+            return true;
+          }
+        }
+        return false;
+      }
+
+      // --- МОНСТРЫ ---
+      function updateMonster(m, speed, lightBoost, darkBoost) {
+        if (!m.active) return;
+        const tx = Math.floor(m.x / TILE);
+        const ty = Math.floor(m.y / TILE);
+        const isDark = (((tx + ty) % 2) + 2) % 2 !== 0;
+        const s = speed * (isDark ? darkBoost : lightBoost);
+        const dx = state.player.x - m.x;
+        const dy = state.player.y - m.y;
+        const len = Math.hypot(dx, dy);
+        if (len > 0) {
+          m.x += (dx / len) * s;
+          m.y += (dy / len) * s;
+        }
+      }
+
+      // --- ОБНОВЛЕНИЕ ИГРЫ ---
+      function update() {
+        if (!state.gameRunning) return;
+
+        const up = state.keys.ArrowUp || state.keys.KeyW;
+        const down = state.keys.ArrowDown || state.keys.KeyS;
+        const left = state.keys.ArrowLeft || state.keys.KeyA;
+        const right = state.keys.ArrowRight || state.keys.KeyD;
+
+        let dx = (right ? 1 : 0) - (left ? 1 : 0);
+        let dy = (down ? 1 : 0) - (up ? 1 : 0);
+        const len = Math.hypot(dx, dy);
+
+        if (len > 0) {
+          dx = (dx / len) * PLAYER_SPEED;
+          dy = (dy / len) * PLAYER_SPEED;
+          const tiles = tilesAround(state.player.x, state.player.y);
+
+          // Если игрок уже в стене — не блокируем, даём выбраться
+          const stuckNow = collides(state.player.x, state.player.y, PLAYER_SIZE, tiles);
+
+          const nx = state.player.x + dx;
+          const ny = state.player.y + dy;
+
+          if (stuckNow || !collides(nx, state.player.y, PLAYER_SIZE, tiles)) {
+            state.player.x = nx;
+          }
+          if (stuckNow || !collides(state.player.x, ny, PLAYER_SIZE, tiles)) {
+            state.player.y = ny;
+          }
+          // Дистанция растёт ТОЛЬКО при реальном движении
+          state.distance += PLAYER_SPEED / 10;
+        }
+
+        updateCamera();
+
+        // Спавн монстров
+        if (!state.mimic.active && state.distance > SPAWN_DIST_MIMIC) {
+          state.mimic.active = true;
+          state.mimic.x = state.player.x + 300;
+          state.mimic.y = state.player.y + 300;
+          state.mimic.flash = 30;
+        }
+        if (!state.bacteria.active && state.distance > SPAWN_DIST_BACTERIA) {
+          state.bacteria.active = true;
+          state.bacteria.x = state.player.x - 400;
+          state.bacteria.y = state.player.y - 400;
+          state.bacteria.flash = 30;
+        }
+
+        // Мимик быстрее в темноте, бактерия — на свету
+        updateMonster(state.mimic, MIMIC_SPEED, 0.1, 1.0);
+        updateMonster(state.bacteria, BACTERIA_SPEED, 1.5, 0.7);
+
+        if (state.mimic.flash > 0) state.mimic.flash--;
+        if (state.bacteria.flash > 0) state.bacteria.flash--;
+
+        // Смерть
+        const hidden = behindBox(tilesAround(state.player.x, state.player.y));
+        if (state.mimic.active &&
+            Math.hypot(state.player.x - state.mimic.x, state.player.y - state.mimic.y) < 28) {
+          endGame(hidden ? 'ТЕБЯ ЗАМЕТИЛИ!' : 'МИМИК ПОЙМАЛ ТЕБЯ!');
+        } else if (state.bacteria.active &&
+            Math.hypot(state.player.x - state.bacteria.x, state.player.y - state.bacteria.y) < 28) {
+          endGame(hidden ? 'ТЕБЯ ЗАМЕТИЛИ!' : 'БАКТЕРИЯ ЗАРАЗИЛА ТЕБЯ!');
+        }
+      }
+
+      // --- ОТРИСОВКА ---
+      function draw() {
+        ctx.fillStyle = BG;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Плитки в зоне видимости
+        const x0 = Math.floor((state.cam.x - canvas.width / 2) / TILE) - 1;
+        const x1 = Math.floor((state.cam.x + canvas.width / 2) / TILE) + 2;
+        const y0 = Math.floor((state.cam.y - canvas.height / 2) / TILE) - 1;
+        const y1 = Math.floor((state.cam.y + canvas.height / 2) / TILE) + 2;
+
+        for (let ty = y0; ty <= y1; ty++) {
+          for (let tx = x0; tx <= x1; tx++) {
+            const t = getTile(tx, ty);
+            if (!t) continue;
+            const sx = tx * TILE - state.cam.x + canvas.width / 2;
+            const sy = ty * TILE - state.cam.y + canvas.height / 2;
+            if (t === 1) {
+              ctx.fillStyle = WALL;
+              ctx.fillRect(sx, sy, TILE, TILE);
+            } else {
+              ctx.fillStyle = BOX;
+              ctx.fillRect(sx, sy, TILE, TILE);
+              ctx.strokeStyle = BOX_EDGE;
+              ctx.lineWidth = 2;
+              ctx.strokeRect(sx + 1, sy + 1, TILE - 2, TILE - 2);
+            }
+          }
+        }
+
+        // Вспышки спавна
+        for (const m of [state.mimic, state.bacteria]) {
+          if (m.active && m.flash > 0) {
+            const sp = w2s(m.x, m.y);
+            ctx.globalAlpha = m.flash / 60;
+            ctx.fillStyle = m === state.mimic ? 'rgba(255,0,0,0.4)' : 'rgba(0,255,0,0.3)';
+            ctx.fillRect(sp.x - 60, sp.y - 60, 120, 120);
+            ctx.globalAlpha = 1.0;
+          }
+        }
+
+        // Монстры
+        if (state.mimic.active) {
+          const sp = w2s(state.mimic.x, state.mimic.y);
+          ctx.fillStyle = MIMIC_COLOR;
+          ctx.fillRect(sp.x - 16, sp.y - 16, 32, 32);
+        }
+        if (state.bacteria.active) {
+          const sp = w2s(state.bacteria.x, state.bacteria.y);
+          ctx.fillStyle = BACTERIA_COLOR;
+          ctx.fillRect(sp.x - 18, sp.y - 18, 36, 36);
+        }
+
+        // Игрок со световым кругом
+        const pc = w2s(state.player.x, state.player.y);
+        const light = document.createElement('canvas');
+        light.width = 300; light.height = 300;
+        const lctx = light.getContext('2d');
+        const grad = lctx.createRadialGradient(150, 150, 0, 150, 150, 150);
+        grad.addColorStop(0, 'rgba(0, 200, 255, 0.12)');
+        grad.addColorStop(1, 'rgba(0, 200, 255, 0)');
+        lctx.fillStyle = grad;
+        lctx.fillRect(0, 0, 300, 300);
+        ctx.drawImage(light, pc.x - 150, pc.y - 150);
+        ctx.fillStyle = PLAYER_COLOR;
+        ctx.fillRect(pc.x - 12, pc.y - 12, PLAYER_SIZE, PLAYER_SIZE);
+
+        drawHud();
+        drawKeyDebug();
+        drawMinimap();
+      }
+
+      function drawHud() {
+        document.getElementById('hud-dist').textContent = Math.floor(state.distance);
+        document.getElementById('hud-rec').textContent = state.record;
+      }
+
+      function drawKeyDebug() {
+        const pressed = Object.keys(state.keys).filter(k => state.keys[k]);
+        document.getElementById('key-list').textContent =
+          pressed.length ? pressed.join(', ') : '—';
+      }
+
+      function drawMinimap() {
+        miniCtx.clearRect(0, 0, MINIMAP_SIZE, MINIMAP_SIZE);
+        const cx = MINIMAP_SIZE / 2, cy = MINIMAP_SIZE / 2;
+
+        const x0 = Math.floor(state.player.x / TILE) - 12;
+        const y0 = Math.floor(state.player.y / TILE) - 12;
+        for (let ty = y0; ty <= y0 + 24; ty++) {
+          for (let tx = x0; tx <= x0 + 24; tx++) {
+            const t = getTile(tx, ty);
+            if (!t) continue;
+            const mx = (tx * TILE - state.player.x) * MM_SCALE + cx;
+            const my = (ty * TILE - state.player.y) * MM_SCALE + cy;
+            const size = TILE * MM_SCALE;
+            miniCtx.fillStyle = t === 1 ? '#464646' : '#664d3a';
+            miniCtx.fillRect(mx, my, size, size);
+          }
+        }
+
+        // Игрок
+        miniCtx.fillStyle = PLAYER_COLOR;
+        miniCtx.beginPath();
+        miniCtx.arc(cx, cy, 4, 0, Math.PI * 2);
+        miniCtx.fill();
+
+        // Монстры
+        for (const m of [state.mimic, state.bacteria]) {
+          if (!m.active) continue;
+          const mx = (m.x - state.player.x) * MM_SCALE + cx;
+          const my = (m.y - state.player.y) * MM_SCALE + cy;
+          if (mx > 0 && mx < MINIMAP_SIZE && my > 0 && my < MINIMAP_SIZE) {
+            miniCtx.fillStyle = m === state.mimic ? MIMIC_COLOR : BACTERIA_COLOR;
+            miniCtx.beginPath();
+            miniCtx.arc(mx, my, 4, 0, Math.PI * 2);
+            miniCtx.fill();
+          }
+        }
+      }
+
+      // --- СТАРТ / КОНЕЦ ---
+      function reset() {
+        // Спавн строго в центре коридорного тайла (0,0) — он всегда свободен
+        state.player = { x: TILE / 2, y: TILE / 2 };
+        state.cam = { x: TILE / 2, y: TILE / 2 };
+        state.mimic = { x: -9999, y: -9999, active: false, flash: 0 };
+        state.bacteria = { x: -9999, y: -9999, active: false, flash: 0 };
+        state.distance = 0;
+        state.reason = '';
+      }
+
+      function endGame(reason) {
+        state.gameRunning = false;
+        state.record = Math.max(state.record, Math.floor(state.distance));
+        state.reason = reason;
+        document.getElementById('end-message').textContent = reason;
+        document.getElementById('end-stats').textContent =
+          'ТЫ ПРОШЁЛ: ' + Math.floor(state.distance) + ' м • РЕКОРД: ' + state.record + ' м';
+        document.getElementById('end').style.display = 'flex';
+      }
+
+      function startGame() {
+        reset();
+        document.getElementById('menu').style.display = 'none';
+        document.getElementById('end').style.display = 'none';
+        document.getElementById('game').style.display = 'block';
+        resizeCanvas();
+        state.gameRunning = true;
+      }
+
+      function resizeCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+      }
+
+      // --- ЦИКЛ ---
+      function loop() {
+        update();
+        if (document.getElementById('game').style.display === 'block') {
+          draw();
+        }
+        requestAnimationFrame(loop);
+      }
+
+      // --- ИНИЦИАЛИЗАЦИЯ ---
+      function init() {
+        canvas = document.getElementById('game-canvas');
+        ctx = canvas.getContext('2d');
+        miniCanvas = document.getElementById('minimap');
+        miniCtx = miniCanvas.getContext('2d');
+
+        window.addEventListener('resize', resizeCanvas);
+
+        // Управление: e.code (физическая клавиша) + e.key (символ, на случай старых браузеров)
+        const keyMap = { 'w': 'KeyW', 'a': 'KeyA', 's': 'KeyS', 'd': 'KeyD',
+                         'ц': 'KeyW', 'ф': 'KeyA', 'ы': 'KeyS', 'в': 'KeyD' };
+
+        window.addEventListener('keydown', (e) => {
+          let matched = false;
+          if (e.code in state.keys) { state.keys[e.code] = true; matched = true; }
+          const key = (e.key || '').toLowerCase();
+          if (keyMap[key]) { state.keys[keyMap[key]] = true; matched = true; }
+          if (e.code.startsWith('Arrow')) { matched = true; }
+          if (matched) e.preventDefault();
+        });
+        window.addEventListener('keyup', (e) => {
+          if (e.code in state.keys) state.keys[e.code] = false;
+          const key = (e.key || '').toLowerCase();
+          if (keyMap[key]) state.keys[keyMap[key]] = false;
+        });
+
+        document.getElementById('btn-start').addEventListener('click', startGame);
+        document.getElementById('btn-restart').addEventListener('click', startGame);
+
+        resizeCanvas();
+        loop();
+      }
+
+      init();
+    })();
+  </script>
+</body>
+</html>
