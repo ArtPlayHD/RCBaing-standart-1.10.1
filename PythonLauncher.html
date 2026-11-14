@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Python Modulator</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #040406; color: #fff; font-family: monospace;
+      padding: 20px; display: flex; flex-direction: column; align-items: center;
+      min-height: 100vh;
+    }
+    h1 { font-size: 2rem; text-shadow: 0 0 15px #00aaff; margin-bottom: 0.5rem; letter-spacing: 4px; }
+    .subtitle { color: #888; font-size: 0.85rem; margin-bottom: 1rem; }
+
+    /* Панель файлов */
+    #file-bar {
+      width: 100%; max-width: 900px; display: flex; gap: 8px; margin-bottom: 10px;
+    }
+    #file-name {
+      flex: 1; background: #0a0a0f; color: #fff; border: 2px solid #00aaff;
+      font-family: monospace; font-size: 1rem; padding: 8px 12px; outline: none;
+    }
+    #file-name:focus { border-color: #00ddff; }
+
+    .btn {
+      padding: 8px 16px; font-size: 0.95rem; background: #111; color: #fff;
+      border: 2px solid #00aaff; cursor: pointer; text-transform: uppercase;
+      transition: all 0.2s; font-family: monospace;
+    }
+    .btn:hover { background: #333; transform: scale(1.03); }
+    .btn-red { border-color: #ff4444; }
+    .btn-red:hover { border-color: #ff6666; }
+    .btn-green { border-color: #44ff44; }
+    .btn-green:hover { border-color: #66ff66; }
+    .btn:disabled { opacity: 0.5; cursor: wait; transform: none; }
+
+    #editor {
+      width: 100%; max-width: 900px; height: 260px;
+      background: #0a0a0f; color: #00ffaa; border: 2px solid #00aaff;
+      font-family: monospace; font-size: 1rem; padding: 12px;
+      resize: vertical; outline: none;
+    }
+    #editor:focus { border-color: #00ddff; }
+
+    #run-btn {
+      margin-top: 10px; padding: 10px 40px; font-size: 1.1rem;
+      border-color: #ff4444;
+    }
+
+    #status { margin-top: 8px; font-size: 0.9rem; color: #888; }
+    #status.ready { color: #44ff44; }
+    #status.saved { color: #00aaff; }
+
+    #output {
+      width: 100%; max-width: 900px; min-height: 140px;
+      background: #050508; border: 2px solid #444; border-left: 6px solid #ff4444;
+      margin-top: 10px; padding: 12px; white-space: pre-wrap;
+      font-size: 0.95rem; color: #ddd;
+    }
+
+    /* Список сохранённых файлов */
+    #files-panel {
+      width: 100%; max-width: 900px; margin-top: 10px;
+      border: 2px solid #333; padding: 10px;
+    }
+    #files-panel h2 { font-size: 1rem; color: #00aaff; margin-bottom: 6px; letter-spacing: 2px; }
+    #files-list { list-style: none; }
+    #files-list li {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 6px 8px; border-bottom: 1px solid #1a1a1d; cursor: pointer;
+    }
+    #files-list li:hover { background: #111; }
+    #files-list .fname { color: #fff; }
+    #files-list .fmeta { color: #555; font-size: 0.8rem; }
+    #files-list .del {
+      color: #ff4444; cursor: pointer; border: none; background: none;
+      font-family: monospace; font-size: 0.85rem;
+    }
+    #files-list .del:hover { text-decoration: underline; }
+
+    /* Экран выхода */
+    #exit-screen {
+      display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: #000; z-index: 100;
+      flex-direction: column; justify-content: center; align-items: center; text-align: center;
+    }
+    #exit-screen h2 { font-size: 2rem; color: #ff4444; text-shadow: 0 0 15px rgba(255,68,68,0.6); margin-bottom: 1rem; }
+    #exit-screen p { color: #888; margin-bottom: 1.5rem; }
+  </style>
+</head>
+<body>
+  <h1>PYTHON MODULATOR</h1>
+  <div class="subtitle">файлы хранятся в localStorage и стираются при выходе</div>
+
+  <div id="file-bar">
+    <input id="file-name" placeholder="имя файла, например: my_script" spellcheck="false">
+    <button class="btn btn-green" id="save-btn">СОХРАНИТЬ</button>
+    <button class="btn" id="new-btn">НОВЫЙ</button>
+    <button class="btn btn-red" id="exit-btn">ВЫЙТИ</button>
+  </div>
+
+  <textarea id="editor" spellcheck="false">print("Привет из Python!")
+for i in range(5):
+    print("Число:", i)
+</textarea>
+
+  <button class="btn btn-red" id="run-btn" disabled>ЗАПУСТИТЬ (CTRL+ENTER)</button>
+  <div id="status">Загрузка Python (~10 МБ, первый раз)...</div>
+  <div id="output">Здесь появится результат.</div>
+
+  <div id="files-panel">
+    <h2>СОХРАНЁННЫЕ ФАЙЛЫ</h2>
+    <ul id="files-list"></ul>
+  </div>
+
+  <div id="exit-screen">
+    <h2>СЕССИЯ ЗАВЕРШЕНА</h2>
+    <p>Все файлы модулятора стёрты из localStorage. Остальные данные сайта не тронуты.</p>
+    <button class="btn btn-green" id="reopen-btn">ОТКРЫТЬ ЗАНОВО</button>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js"></script>
+  <script>
+    (function () {
+      'use strict';
+
+      // Префикс: только ключи с ним принадлежат модулятору
+      const PREFIX = 'pyrunner_';
+      const KEY_LIST = PREFIX + 'files'; // список имён файлов
+
+      let pyodide = null;
+      let currentFile = '';
+
+      const runBtn   = document.getElementById('run-btn');
+      const saveBtn  = document.getElementById('save-btn');
+      const newBtn   = document.getElementById('new-btn');
+      const exitBtn  = document.getElementById('exit-btn');
+      const reopenBtn = document.getElementById('reopen-btn');
+      const statusEl = document.getElementById('status');
+      const outputEl = document.getElementById('output');
+      const editorEl = document.getElementById('editor');
+      const nameEl   = document.getElementById('file-name');
+      const listEl   = document.getElementById('files-list');
+      const exitScreen = document.getElementById('exit-screen');
+
+      // --- РАБОТА С LOCALSTORAGE (только свои ключи) ---
+
+      function getFileNames() {
+        const raw = localStorage.getItem(KEY_LIST);
+        return raw ? JSON.parse(raw) : [];
+      }
+
+      function saveFileNames(names) {
+        localStorage.setItem(KEY_LIST, JSON.stringify(names));
+      }
+
+      function saveCurrentFile() {
+        let name = nameEl.value.trim();
+        if (!name) {
+          name = 'script_' + Date.now();
+          nameEl.value = name;
+        }
+        const key = PREFIX + 'file_' + name;
+        const data = {
+          code: editorEl.value,
+          saved: new Date().toLocaleString('ru-RU'),
+        };
+        localStorage.setItem(key, JSON.stringify(data));
+
+        const names = getFileNames();
+        if (!names.includes(name)) {
+          names.push(name);
+          saveFileNames(names);
+        }
+        currentFile = name;
+        statusEl.textContent = 'Сохранено: ' + name;
+        statusEl.classList.add('saved');
+        refreshFileList();
+      }
+
+      function openFile(name) {
+        const key = PREFIX + 'file_' + name;
+        const raw = localStorage.getItem(key);
+        if (!raw) return;
+        const data = JSON.parse(raw);
+        editorEl.value = data.code;
+        nameEl.value = name;
+        currentFile = name;
+        statusEl.textContent = 'Открыт файл: ' + name;
+        statusEl.classList.add('saved');
+      }
+
+      function deleteFile(name) {
+        const key = PREFIX + 'file_' + name;
+        localStorage.removeItem(key);
+        const names = getFileNames().filter(n => n !== name);
+        saveFileNames(names);
+        if (currentFile === name) {
+          currentFile = '';
+          nameEl.value = '';
+        }
+        refreshFileList();
+      }
+
+      // Стирает ТОЛЬКО данные модулятора (по префиксу)
+      function purgeModulator() {
+        const toRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k.startsWith(PREFIX)) toRemove.push(k);
+        }
+        toRemove.forEach(k => localStorage.removeItem(k));
+        return toRemove.length;
+      }
+
+      function refreshFileList() {
+        const names = getFileNames();
+        listEl.innerHTML = '';
+        if (names.length === 0) {
+          const li = document.createElement('li');
+          li.innerHTML = '<span class="fmeta">пока пусто — введи имя и нажми СОХРАНИТЬ</span>';
+          li.style.cursor = 'default';
+          listEl.appendChild(li);
+          return;
+        }
+        names.forEach(name => {
+          const li = document.createElement('li');
+          const key = PREFIX + 'file_' + name;
+          const raw = localStorage.getItem(key);
+          const saved = raw ? JSON.parse(raw).saved : '';
+          li.innerHTML =
+            '<span class="fname">' + name + '</span>' +
+            '<span class="fmeta">' + saved + '</span>' +
+            '<button class="del" title="удалить">[X]</button>';
+          li.addEventListener('click', (e) => {
+            if (e.target.classList.contains('del')) return;
+            openFile(name);
+          });
+          li.querySelector('.del').addEventListener('click', () => deleteFile(name));
+          listEl.appendChild(li);
+        });
+      }
+
+      // --- PYODIDE ---
+
+      function redirectPrint() {
+        pyodide.runPython(`
+import sys
+from js import console
+
+class JSWriter:
+    def write(self, s):
+        console.log(s)
+        return len(s)
+    def flush(self):
+        pass
+
+sys.stdout = JSWriter()
+sys.stderr = JSWriter()
+`);
+      }
+
+      async function init() {
+        try {
+          pyodide = await loadPyodide();
+          redirectPrint();
+          statusEl.textContent = 'Python готов!';
+          statusEl.classList.add('ready');
+          runBtn.disabled = false;
+        } catch (err) {
+          statusEl.textContent = 'Ошибка загрузки: ' + err.message;
+        }
+      }
+
+      runBtn.addEventListener('click', async () => {
+        if (!pyodide) return;
+        runBtn.disabled = true;
+        outputEl.textContent = '';
+
+        pyodide.runPython(`
+import sys, io
+sys.stdout = io.StringIO()
+sys.stderr = io.StringIO()
+`);
+
+        try {
+          await pyodide.runPythonAsync(editorEl.value);
+          const stdout = pyodide.runPython('sys.stdout.getvalue()');
+          const stderr = pyodide.runPython('sys.stderr.getvalue()');
+          outputEl.textContent = stdout + (stderr ? '\n[ОШИБКА]\n' + stderr : '');
+        } catch (err) {
+          outputEl.textContent = '[ОШИБКА]\n' + err.message;
+        } finally {
+          redirectPrint();
+          runBtn.disabled = false;
+        }
+      });
+
+      // --- ВЫХОД: стираем только модулятор ---
+
+      function doExit() {
+        purgeModulator();
+        exitScreen.style.display = 'flex';
+      }
+
+      exitBtn.addEventListener('click', doExit);
+      reopenBtn.addEventListener('click', () => {
+        exitScreen.style.display = 'none';
+        editorEl.value = 'print("Привет из Python!")\nfor i in range(5):\n    print("Число:", i)\n';
+        nameEl.value = '';
+        currentFile = '';
+        refreshFileList();
+      });
+
+      // Автоочистка при закрытии вкладки/переходе со страницы
+      window.addEventListener('beforeunload', purgeModulator);
+      window.addEventListener('pagehide', purgeModulator);
+
+      // --- ПРОЧЕЕ ---
+
+      saveBtn.addEventListener('click', saveCurrentFile);
+      newBtn.addEventListener('click', () => {
+        editorEl.value = '';
+        nameEl.value = '';
+        currentFile = '';
+        editorEl.focus();
+      });
+
+      editorEl.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && e.key === 'Enter') runBtn.click();
+      });
+
+      init();
+      refreshFileList();
+    })();
+  </script>
+</body>
+</html>
